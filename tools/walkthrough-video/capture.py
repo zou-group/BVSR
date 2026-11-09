@@ -32,11 +32,26 @@ try:
     cmd("Page.enable")
     cmd("Emulation.setDeviceMetricsOverride", width=1920, height=1080, deviceScaleFactor=1, mobile=False)
     cmd("Page.navigate", url="file://" + os.path.join(scene_dir, "scene.html"))
-    time.sleep(1.5)
-    r = cmd("Runtime.evaluate", expression="document.fonts.ready.then(() => new Promise(r => setTimeout(() => r(typeof renderAt + ':' + document.fonts.size), 800)))", awaitPromise=True)
+    # wait until the scene script, its fonts and its images are all loaded
+    ready = None
+    for _ in range(80):
+        time.sleep(0.5)
+        r = cmd("Runtime.evaluate", awaitPromise=True, expression="""(async () => {
+            if (typeof renderAt !== 'function' || document.readyState !== 'complete') return '';
+            await document.fonts.ready;
+            await Promise.all([...document.images].map(i => i.decode().catch(() => {})));
+            if ([...document.images].some(i => !i.naturalWidth)) return '';
+            return typeof renderAt + ':' + document.fonts.size;
+        })()""")
+        ready = r["result"].get("value")
+        if ready: break
+    if not ready: raise RuntimeError("scene did not become ready")
+    time.sleep(0.8)
+    r = {"result": {"value": ready}}
     print("ready:", r["result"].get("value"), flush=True)
     def frame(t, fmt="jpeg", q=93):
-        cmd("Runtime.evaluate", expression=f"renderAt({t:.5f})")
+        res = cmd("Runtime.evaluate", expression=f"renderAt({t:.5f})")
+        if "exceptionDetails" in res: raise RuntimeError(f"renderAt failed at t={t}: {res['exceptionDetails'].get('text')}")
         args = dict(format=fmt)
         if fmt == "jpeg": args["quality"] = q
         if os.environ.get("FAST"): args["optimizeForSpeed"] = True
