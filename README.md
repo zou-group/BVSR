@@ -26,7 +26,7 @@ assets/js/data.js          chart data, recovered from the paper's vector figures
 assets/js/charts.js        all figures and interactive widgets (plain SVG, no chart library)
 assets/js/main.js          links, theme toggle, navigation, copy-BibTeX
 assets/video/              walkthrough video + poster frame
-assets/img/                favicon, social preview image
+assets/img/                favicon, social preview image, Stanford wordmark (from the paper sources)
 tools/walkthrough-video/   source of the video (not needed by the site; safe to leave out when uploading)
 ```
 

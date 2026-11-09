@@ -29,7 +29,7 @@
 
 <!-- ================================================================= top bar -->
 <header class="topbar">
-  <a class="brand" href="#top" aria-label="BVSR, back to top"><span class="brand-mark"><i></i><i></i></span>BVSR</a>
+  <a class="brand" href="#top" aria-label="BVSR, back to top"><img class="brand-logo" src="assets/img/stanford.png" alt="Stanford" width="86" height="18"><span class="brand-sep" aria-hidden="true"></span><span class="brand-name">BVSR</span></a>
   <nav class="topnav" aria-label="Sections">
     <a href="#overview">Overview</a>
     <a href="#creativity">Creativity</a>
@@ -52,18 +52,17 @@
 <section class="hero">
   <svg class="hero-dots" id="hero-dots" aria-hidden="true"></svg>
   <div class="wide">
-    <span class="badge"><i></i>Preprint · 2026</span>
     <h1><span class="bv">Blind Variation</span>, <span class="sr">Selective Retention</span></h1>
     <p class="subtitle">Improving Creative Idea Generation in AI Scientists</p>
     <div class="authors">
-      <span>Guowei Xu<sup>*</sup></span>
-      <span>Jiaru Zou<sup>*</sup></span>
-      <span>Mete Erdogan</span>
-      <span>Haotian Ye</span>
-      <span>Pan Lu</span>
-      <span>James Zou</span>
+      <span>Guowei Xu<sup>1,*</sup></span>
+      <span>Jiaru Zou<sup>1,*</sup></span>
+      <span>Mete Erdogan<sup>1</sup></span>
+      <span>Haotian Ye<sup>1</sup></span>
+      <span>Pan Lu<sup>1</sup></span>
+      <span>James Zou<sup>1</sup></span>
     </div>
-    <div class="affil"><b>Stanford University</b> &nbsp;·&nbsp; <sup>*</sup>Equal contribution</div>
+    <div class="affil"><span><sup>1</sup>Stanford University</span><span><sup>*</sup>Equal contribution</span></div>
     <div class="cta">
       <!-- Set the paper URL in assets/js/main.js (LINKS.paper) once the arXiv ID is known. -->
       <a class="btn primary" id="link-paper" href="#" aria-disabled="true">
@@ -300,21 +299,21 @@
       <div class="p-h">Proposition · Information–exploration tradeoff</div>
       <p>Under shared-signal generation, the expected originality of generated proposals is non-increasing in task information. Under a fixed generation budget, if higher-utility ideas are less associated with the shared task signal, more task information also lowers the expected utility of the best proposal.</p>
     </div>
-    <p>The simulation below plays this model forward for one batch of 112 proposals, the batch size used in our experiments. Turn up the task signal and watch the proposals pile onto the most task-associated ideas.</p>
+    <p>The figure below plays this model forward for one batch of 112 proposals, the batch size used in our experiments. Turn up the task signal and watch the proposals pile onto the most task-associated ideas.</p>
   </div>
 
   <figure class="wide reveal">
     <div class="fig">
       <div class="fig-head">
         <div>
-          <div class="fig-title">Information-induced anchoring, simulated</div>
+          <div class="fig-title">Information-induced anchoring</div>
           <div class="fig-sub">Each dot is one proposal; each column is one idea class, ordered from most to least associated with the task signal.</div>
         </div>
-        <span class="fig-tag live">Toy model</span>
+        <span class="fig-tag live">Interactive</span>
       </div>
       <div class="toy">
         <div>
-          <svg id="toy-svg" role="img" aria-label="Simulated proposals distributed over idea classes"></svg>
+          <svg id="toy-svg" role="img" aria-label="Proposals distributed over idea classes under the shared-signal model"></svg>
           <div class="ctl">
             <div class="ctl-head"><span><b>Task information</b> → strength of the shared signal λ(<i>b</i>)</span><output id="toy-out">λ = 0.0</output></div>
             <div class="ctl-row">
@@ -332,7 +331,7 @@
         </div>
       </div>
     </div>
-    <figcaption><b>An illustration of the paper's theoretical model, not experimental data.</b> Proposal \(t\) picks \(\arg\max_i\{\lambda a_i + \varepsilon_{t,i}\}\) with Gumbel noise \(\varepsilon\) held fixed while you drag, so only the signal strength changes. High-utility ideas are placed among the less task-associated classes, the condition under which the proposition predicts that the best proposal gets worse.</figcaption>
+    <figcaption><b>The shared-signal model in action.</b> This figure illustrates the theory above; the experimental results follow in the next section. Proposal \(t\) picks \(\arg\max_i\{\lambda a_i + \varepsilon_{t,i}\}\) with Gumbel noise \(\varepsilon\) held fixed while you drag, so only the signal strength changes. High-utility ideas are placed among the less task-associated classes, the condition under which the proposition predicts that the best proposal gets worse.</figcaption>
   </figure>
 
   <div class="col">

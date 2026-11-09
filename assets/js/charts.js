@@ -118,7 +118,7 @@
     update();
   })();
 
-  /* ---------------------------------------------------------------- toy model: shared-signal generation */
+  /* ---------------------------------------------------------------- theory illustration: shared-signal generation */
   (function toy() {
     var svg = $('#toy-svg'); if (!svg) return;
     var K = 16, N = 112, W = 640, Hh = 262, base = 222, colW = W / K, pitch = 9.6, r = 4.1, perRow = 3;
