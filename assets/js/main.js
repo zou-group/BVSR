@@ -9,7 +9,7 @@
   var LINKS = {
     paper: '',                                   // e.g. 'https://arxiv.org/abs/2611.01234'
     code: 'https://github.com/zou-group/BVSR',
-    huggingface: ''                              // e.g. 'https://huggingface.co/datasets/<org>/<name>'
+    huggingface: 'https://huggingface.co/collections/Xkev/bvsr'
   };
 
   var paper = document.getElementById('link-paper');
