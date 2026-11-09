@@ -32,7 +32,9 @@
   .title { font-family: var(--serif); font-weight: 600; font-size: 132px; line-height: 1.04; letter-spacing: -.025em; margin: 0; }
   .subtitle { font-family: var(--serif); font-style: italic; font-size: 50px; color: var(--ink-2); margin-top: 38px; }
   .authors { font-size: 33px; font-weight: 500; margin-top: 64px; display: flex; gap: 46px; }
-  .affil { font-size: 27px; color: var(--ink-3); margin-top: 18px; }
+  .affil { font-size: 27px; font-weight: 500; color: var(--ink-2); margin-top: 22px; display: flex; gap: 54px; justify-content: center; }
+  .authors sup, .affil sup { font-size: .6em; line-height: 0; font-weight: 400; color: var(--ink-3); margin-left: 2px; }
+  .affil sup { margin: 0 3px 0 0; }
   .pill { font-size: 24px; font-weight: 500; color: var(--ink-2); border: 2px solid var(--rule); background: var(--surface); padding: 10px 26px; border-radius: 999px; margin-bottom: 44px; display: inline-flex; gap: 14px; align-items: center; }
   .pill i { width: 12px; height: 12px; border-radius: 50%; background: var(--bvsr); }
 
@@ -89,11 +91,10 @@
 
   <!-- 1 · title -->
   <div class="scene center" data-in="0" data-out="5">
-    <div class="pill a" data-in="0.2"><i></i>Stanford University · 2026</div>
     <h1 class="title"><span class="bv a" data-in="0.4" style="display:inline-block">Blind Variation,</span><br><span class="sr a" data-in="1.0" style="display:inline-block">Selective Retention</span></h1>
     <div class="subtitle a" data-in="1.7">Improving Creative Idea Generation in AI Scientists</div>
-    <div class="authors a" data-in="2.4"><span>Guowei Xu*</span><span>Jiaru Zou*</span><span>Mete Erdogan</span><span>Haotian Ye</span><span>Pan Lu</span><span>James Zou</span></div>
-    <div class="affil a" data-in="2.6">*Co-first Authors</div>
+    <div class="authors a" data-in="2.4"><span>Guowei Xu<sup>1,*</sup></span><span>Jiaru Zou<sup>1,*</sup></span><span>Mete Erdogan<sup>1</sup></span><span>Haotian Ye<sup>1</sup></span><span>Pan Lu<sup>1</sup></span><span>James Zou<sup>1</sup></span></div>
+    <div class="affil a" data-in="2.6"><span><sup>1</sup>Stanford University</span><span><sup>*</sup>Co-first Authors</span></div>
   </div>
 
   <!-- 2 · problem -->
@@ -185,7 +186,7 @@
     <div class="subtitle a" data-in="50.8" style="font-style:normal;font-family:var(--sans);font-size:34px;margin-top:70px">Blind Variation, Selective Retention · github.com/zou-group/BVSR</div>
   </div>
 
-  <div id="foot"><span><span class="mk"><i style="background:var(--bv)"></i><i style="background:var(--sr)"></i></span><b>BVSR</b></span><span>Xu*, Zou*, Erdogan, Ye, Lu, Zou · Stanford University</span></div>
+  <div id="foot"><span><span class="mk"><i style="background:var(--bv)"></i><i style="background:var(--sr)"></i></span><b>BVSR</b></span></div>
   <div id="bar"><i></i></div>
 </div>
 
