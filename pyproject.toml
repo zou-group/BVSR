@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "bvsr"
+version = "0.1.0"
+description = "Blind Variation & Selective Retention: creative idea generation for AI scientists"
+readme = "README.md"
+license = { file = "LICENSE" }
+requires-python = ">=3.12"
+dependencies = [
+    "openai>=2.38",
+    "requests",
+    "numpy==2.4.6",
+]
+
+[tool.setuptools.packages.find]
+include = ["bvsr*"]
+
+[tool.setuptools.package-data]
+"bvsr.tasks" = ["*.json", "assets/*", "simpletes/*/*.py", "simpletes/*/*.txt"]
+"bvsr.metrics" = ["*.json"]

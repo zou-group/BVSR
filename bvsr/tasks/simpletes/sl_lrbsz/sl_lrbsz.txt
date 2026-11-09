@@ -1,0 +1,12 @@
+Discover a scaling law function that models the relationship between learning rate, batch size, data size, model parameters and training loss.
+**IMPORTANT: the law must use no more than 26 fitted parameters.**
+
+DATA (2702 points, per-group fit): features [lr, bsz, data_size, non_embedding_param_size]; label lm_loss.
+  lr 2.44e-4..2.21e-2 (log-spaced); bsz 16..2048 (powers of 2); data 2e9..1e11 tokens; params 6e7..1.07e9; loss 2.1..3.7.
+
+You MUST write EXACTLY these functions (helpers allowed), self-contained file, imports limited to numpy/scipy:
+    def scaling_law_func(data_points, params): ...   # (N,4) array -> predicted loss (N,)
+    def fit_scaling_law(data_points, loss_values): ... # -> optimized params (<= 26 scalars)
+scaling_law_func must be pure in (data_points, params) — no input-dependent statistics.
+
+SCORING: R^2 = 1 - NMSE of the fitted law (per-group fit; any load/fit failure, NaN/Inf prediction, or parameter-cap breach scores -1e6). The SimpleTES init baseline (separable power law, BFGS from ones) numerically explodes on these feature scales: measured train R^2 = -3.9e22 — ANY sane fit beats it. The real bar is capturing the lr-bsz interaction (each group has an interior lr/bsz optimum with convex loss around it).

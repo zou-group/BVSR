@@ -1,0 +1,18 @@
+Forecast cellular-resolution neural activity in a larval zebrafish brain (ZAPBench). Light-sheet fluorescence microscopy recorded per-neuron activity traces for 71,721 neurons over 7,879 time steps across 8 visual-stimulus training conditions. Given the past 4 time steps of every neuron, forecast the next 16 time steps for every neuron jointly: 71,721 univariate series predicted together.
+
+You write ONE function (helpers/classes allowed), a self-contained module WITH its own imports (numpy, and optionally torch/jax/scipy/sklearn are available):
+
+    def forecast(X_train, predict_inputs, X_train_condition_lengths=None, **kwargs):
+        # X_train: (T_train, 71721) float32 -- 8 training conditions concatenated in
+        #     CONDITIONS_TRAIN order (0,1,2,4,5,6,7,8); train however you like.
+        # X_train_condition_lengths: (8,) int32 -- per-condition lengths of X_train,
+        #     same order; NEVER let a training window cross a condition boundary.
+        # predict_inputs: (n_windows, 4, 71721) float32 -- the 4-step context windows
+        #     you must forecast forward (stride-1 within each condition's val region).
+        # kwargs: random_state, time_budget_s, num_train_conditions=8, horizon,
+        #     context_len.
+        return Y_pred      # (n_windows, 16, 71721) float32, finite
+
+SCORING: combined_score = -MAE, where MAE = mean|Y_pred - Y_true| over windows, the 16 horizon steps and all 71,721 neurons (lower MAE => higher score). A crash, timeout, wrong shape or any non-finite value scores the failure sentinel -10.0.
+
+BUDGET: forecast(...) must return within time_budget_s = 60 s (training included); 1x NVIDIA RTX PRO 6000 Blackwell GPU (96 GB, dedicated), 8 CPU threads, no network. Trivial references on this split (H=16): mean-context MAE=0.0289, persistence MAE=0.0316. Data are pre-normalized traces in roughly [-0.25, 1.5].

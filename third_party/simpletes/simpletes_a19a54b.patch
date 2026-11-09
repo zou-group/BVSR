@@ -1,0 +1,452 @@
+diff --git a/simpletes/engine/checkpoint.py b/simpletes/engine/checkpoint.py
+index 3458413..11a27e2 100755
+--- a/simpletes/engine/checkpoint.py
++++ b/simpletes/engine/checkpoint.py
+@@ -48,6 +48,7 @@ class CheckpointManager:
+         evaluation_failures: int,
+         best_score: float,
+         selector: Selector,
++        refunded_attempts: int = 0,
+     ) -> tuple[
+         str | None,
+         dict[str, Any],
+@@ -65,6 +66,7 @@ class CheckpointManager:
+             "completed_evaluations": completed_evaluations,
+             "generation_attempts": generation_attempts,
+             "generation_failures": generation_failures,
++            "refunded_attempts": refunded_attempts,
+             "generation_cancellations": generation_cancellations,
+             "evaluation_failures": evaluation_failures,
+             "best_score": best_score,
+@@ -89,11 +91,17 @@ class CheckpointManager:
+         Overwrites previous checkpoint since checkpoints are monotonically growing.
+         """
+         ts = datetime.now().strftime("%H%M%S")
+-        path = os.path.join(self.checkpoint_dir, f"db_state_{ts}")
+-
+-        # Remove previous checkpoint (tracked in memory, O(1) instead of O(n) dir scan)
+-        if self._last_checkpoint_path and os.path.isdir(self._last_checkpoint_path):
+-            shutil.rmtree(self._last_checkpoint_path)
++        final_path = os.path.join(self.checkpoint_dir, f"db_state_{ts}")
++        # Stage into a hidden dir and only rename + delete-previous once every file is on disk.
++        # The upstream order (delete previous, THEN multi-file write) leaves no loadable
++        # checkpoint if the process is killed mid-write (a wall-clock limit or a node
++        # failure). The dot prefix keeps partial staging dirs invisible to the
++        # launcher's db_state_* resume glob, so a crash mid-write still resumes from the previous
++        # complete checkpoint.
++        path = os.path.join(self.checkpoint_dir, f".db_staging_{ts}")
++        for stale in (path, final_path):
++            if os.path.isdir(stale):
++                shutil.rmtree(stale)
+ 
+         os.makedirs(path, exist_ok=True)
+ 
+@@ -207,8 +215,12 @@ class CheckpointManager:
+                     continue
+                 shutil.copy2(source_path, os.path.join(shared_dir, filename))
+ 
+-        self._last_checkpoint_path = path
+-        rich_print(_format_log(self.instance_id, "✓", f"[green][dim]Checkpoint:[/dim][/green] [cyan]{path}[/cyan]"))
++        os.rename(path, final_path)
++        previous = self._last_checkpoint_path
++        if previous and previous != final_path and os.path.isdir(previous):
++            shutil.rmtree(previous)
++        self._last_checkpoint_path = final_path
++        rich_print(_format_log(self.instance_id, "✓", f"[green][dim]Checkpoint:[/dim][/green] [cyan]{final_path}[/cyan]"))
+ 
+     def _atomic_write(self, path: str, content: bytes) -> None:
+         """
+@@ -406,6 +418,7 @@ class CheckpointManager:
+             "generation_attempts": int(metadata.get("generation_attempts", 0)),
+             "generation_failures": int(metadata.get("generation_failures", 0)),
+             "generation_cancellations": int(metadata.get("generation_cancellations", 0)),
++            "refunded_attempts": int(metadata.get("refunded_attempts", 0)),
+             "evaluation_failures": int(metadata.get("evaluation_failures", 0)),
+             "gen_id_counter": int(metadata.get("gen_id_counter", 0)),
+             "best_score": float(best_score),
+diff --git a/simpletes/engine/core.py b/simpletes/engine/core.py
+index d231599..036e8a8 100755
+--- a/simpletes/engine/core.py
++++ b/simpletes/engine/core.py
+@@ -22,6 +22,7 @@ import importlib.util
+ import os
+ import signal
+ import sys
++import time
+ import traceback
+ import uuid
+ from pathlib import Path
+@@ -144,6 +145,45 @@ class SimpleTESEngine(SchedulerMixin):
+         self.completed_evaluations: int = 0
+         self.generation_attempts: int = 0
+         self.generation_failures: int = 0
++        # STES_REFUND_PROVIDER_FAILURES=1: the generation budget counts generations the provider
++        # DELIVERED, not attempts. Two coupled refunds, both required (refunding attempts alone
++        # buys no extra search and can stall the scheduler, because the binding budget is the
++        # policy's per-chain prompt allowance):
++        #   engine: a transport-class LLMCallError hands its task.k back to generation_attempts;
++        #   policy: a batch with no delivered result does not consume a chain prompt
++        #           (TrajectoryPolicyBase._finalize_locked).
++        # Only TRANSPORT errors qualify. Context-window overflows, bad requests, auth errors and
++        # content rejections are the arm's own behaviour and stay charged -- the long-prompt arms
++        # would otherwise retry for free. A cap of 2*max_generations keeps a dead provider from
++        # making the run immortal; it persists through checkpoints so a resume cannot re-arm it.
++        self._refund_enabled: bool = os.environ.get("STES_REFUND_PROVIDER_FAILURES", "") == "1"
++        self._refunded_attempts: int = 0
++        self._refund_cap: int = 2 * max(0, config.max_generations)
++        self._refund_cap_reported: bool = False
++        # Chains are strictly serial (backpressure_multiplier defaults to 0): step t+1's prompt is
++        # built from what step t committed, and finalize commits the best of the children that
++        # ARRIVED. So a transport failure must not merely be refunded -- a step that proceeds with
++        # fewer than its K candidates commits a best-of-fewer, weakening selection for every later
++        # step of that chain. Under refund mode a transport-failed generation is therefore RETRIED
++        # (with backoff) until the step has its full K, and only past the retry cap does it fall
++        # through to the refund path. The cap keeps a permanently dead provider from retrying to
++        # walltime; it is generous because a retry burns one cheap failed request, not budget.
++        self._retried_attempts: int = 0
++        _cap_env = os.environ.get("STES_TRANSPORT_RETRY_CAP", "")
++        self._retry_cap: int = (int(_cap_env) if _cap_env.strip().isdigit()
++                                else 20 * max(0, config.max_generations))
++        self._retry_cap_reported: bool = False
++        # The slot cap alone does not bound retrying in WALL CLOCK: with the 60 s saturating
++        # backoff and gen_concurrency sleepers it works out to days for a provider that is simply
++        # dead. The give-up timer does: if the provider has delivered NOTHING for this long,
++        # retries stop and failures fall to the refund path, which drains and terminates. Any
++        # outage shorter than this is ridden out at full-K semantics.
++        _giveup_env = os.environ.get("STES_OUTAGE_GIVEUP_S", "")
++        self._outage_giveup_s: float = (float(_giveup_env)
++                                        if _giveup_env.strip().replace(".", "", 1).isdigit()
++                                        else 3600.0)
++        self._last_delivery_mono: float = time.monotonic()
++        self._outage_giveup_reported: bool = False
+         self.generation_cancellations: int = 0
+         self.evaluation_failures: int = 0
+         self._failure_records: list[dict[str, Any]] = []
+@@ -552,6 +592,7 @@ class SimpleTESEngine(SchedulerMixin):
+                 completed_evaluations=self.completed_evaluations,
+                 generation_attempts=self.generation_attempts,
+                 generation_failures=self.generation_failures,
++                refunded_attempts=self._refunded_attempts,
+                 generation_cancellations=self.generation_cancellations,
+                 evaluation_failures=self.evaluation_failures,
+                 best_score=self.best_score,
+@@ -611,6 +652,7 @@ class SimpleTESEngine(SchedulerMixin):
+         track_io = self.config.save_llm_io or self.config.reflection_mode
+         successes = 0
+         cancelled = False
++        transport_refunded = False
+ 
+         async with self._counter_lock:
+             self._gen_inflight += 1
+@@ -631,12 +673,41 @@ class SimpleTESEngine(SchedulerMixin):
+             rich_print(f"   [dim]Message:  [/dim]{e.message}")
+             async with self._counter_lock:
+                 self.generation_failures += 1
++                requeue = self._should_retry_transport(task, e.error_type)
++                if not requeue:
++                    transport_refunded = self._refund_transport_failure(task, e.error_type)
++            if requeue:
++                # The step is not allowed to proceed under-sampled: put the same task back on the
++                # queue after a backoff, so the batch stays open (done < submitted) and the serial
++                # chain waits for its full K. Budget is untouched -- the attempt was charged when
++                # the step was scheduled and will be delivered by the retry.
++                # Cancellation during the backoff must not escape uncleaned: it would skip the
++                # inflight decrement (poisoning the refund-mode drain gate) and leave the batch
++                # forever open with the selector.
++                try:
++                    await asyncio.sleep(min(60.0, 3.0 * getattr(task, "_transport_retries", 1)))
++                    queued = await self._enqueue_generation_task(task)
++                except asyncio.CancelledError:
++                    async with self._counter_lock:
++                        self._gen_inflight -= 1
++                        self.generation_cancellations += 1
++                    raise
++                if queued:
++                    async with self._counter_lock:
++                        self._gen_inflight -= 1
++                    return
++                async with self._counter_lock:      # stop event raced us: fall back to refund
++                    transport_refunded = self._refund_transport_failure(task, e.error_type)
+             results = []
+         except Exception as e:
+             rich_print(self._log("⚠", f"[red]Generation failed: {type(e).__name__}: {str(e)}[/red]"))
+             async with self._counter_lock:
+                 self.generation_failures += 1
+             results = []
++        if results:
++            # any delivered result -- success or content-rejected -- proves the provider is alive
++            self._last_delivery_mono = time.monotonic()
++            self._outage_giveup_reported = False
+         for result in results:
+             if result.success:
+                 successes += 1
+@@ -657,9 +728,14 @@ class SimpleTESEngine(SchedulerMixin):
+                 completion = self.selector.on_generation_failed(task.gen_id)
+                 await self._handle_pending_finalize(completion)
+ 
+-        # Notify policy for missing results (LLM returned fewer than k)
++        # Notify policy for missing results (LLM returned fewer than k). A transport failure is
++        # reported through its own hook so a prompt-budgeting policy can decline to charge the
++        # step; every other shortfall is a plain failure exactly as upstream.
+         for _ in range(task.k - len(results)):
+-            completion = self.selector.on_generation_failed(task.gen_id)
++            if transport_refunded:
++                completion = self.selector.on_generation_transport_failed(task.gen_id)
++            else:
++                completion = self.selector.on_generation_failed(task.gen_id)
+             await self._handle_pending_finalize(completion)
+ 
+         async with self._counter_lock:
+@@ -668,6 +744,50 @@ class SimpleTESEngine(SchedulerMixin):
+         if cancelled:
+             raise asyncio.CancelledError()
+ 
++    # Transport-class failures: the provider's capacity, not this arm's prompt or our code.
++    TRANSPORT_ERRORS = frozenset({
++        "ServiceUnavailableError", "RateLimitError", "InternalServerError", "BadGatewayError",
++        "APIConnectionError", "APIError", "Timeout", "APITimeoutError", "ServiceUnavailable",
++    })
++
++    def _should_retry_transport(self, task: GenerationTask, error_type: str) -> bool:
++        """Whether this transport failure is retried in place. Caller holds _counter_lock."""
++        if not self._refund_enabled or error_type not in self.TRANSPORT_ERRORS:
++            return False
++        if time.monotonic() - self._last_delivery_mono > self._outage_giveup_s:
++            if not self._outage_giveup_reported:
++                self._outage_giveup_reported = True
++                rich_print(self._log("⚠", f"[yellow]Provider has delivered nothing for "
++                                          f"{int(self._outage_giveup_s)}s; giving up on retries "
++                                          f"and falling back to refunds so the run can drain[/yellow]"))
++            return False
++        if self._retried_attempts + task.k > self._retry_cap:
++            if not self._retry_cap_reported:
++                self._retry_cap_reported = True
++                rich_print(self._log("⚠", f"[yellow]Transport retry cap reached at "
++                                          f"{self._retried_attempts}; falling back to refunds[/yellow]"))
++            return False
++        self._retried_attempts += task.k
++        task._transport_retries = getattr(task, "_transport_retries", 0) + 1
++        return True
++
++    def _refund_transport_failure(self, task: GenerationTask, error_type: str) -> bool:
++        """Give back the budget a transport failure spent. Caller holds _counter_lock.
++        Returns True when the refund applied (the batch is then reported through the
++        transport hook so the policy skips its prompt charge as well)."""
++        if not self._refund_enabled or error_type not in self.TRANSPORT_ERRORS:
++            return False
++        if self._refunded_attempts + task.k > self._refund_cap:
++            if not self._refund_cap_reported:
++                self._refund_cap_reported = True
++                rich_print(self._log("⚠", f"[yellow]Refund cap reached at "
++                                          f"{self._refunded_attempts} attempts; charging per "
++                                          f"attempt from here on[/yellow]"))
++            return False
++        self.generation_attempts -= task.k
++        self._refunded_attempts += task.k
++        return True
++
+     async def _gen_worker(self, wid: int) -> None:
+         """Generation worker with clean cancellation."""
+         try:
+@@ -787,7 +907,14 @@ class SimpleTESEngine(SchedulerMixin):
+         if should_show:
+             await self._print_status()
+         if should_ckpt:
+-            await self._write_checkpoint()
++            try:
++                await self._write_checkpoint()
++            except Exception as e:  # noqa: BLE001
++                # A failed periodic checkpoint write (full disk, transient filesystem error) must
++                # not propagate: _eval_worker re-raises and dies permanently, silently shrinking
++                # eval concurrency by one per failure until the run hangs with budget frozen.
++                # Losing one checkpoint interval is recoverable; a dead worker is not.
++                rich_print(self._log("⚠", f"checkpoint write failed, continuing: {e}"))
+         self._progress_event.set()
+ 
+     async def _ingest_result(self, result: Any) -> None:
+@@ -868,6 +995,8 @@ class SimpleTESEngine(SchedulerMixin):
+             gen_failures = self.generation_failures
+             eval_failures = self.evaluation_failures
+             gen_inflight = self._gen_inflight
++            refunded = self._refunded_attempts
++            retried = self._retried_attempts
+         async with self._db_lock:
+             total = len(self.db)
+             best_score = self.best_score if total > 0 else None
+@@ -878,7 +1007,9 @@ class SimpleTESEngine(SchedulerMixin):
+ 
+         msg_parts = [
+             f"finished_nodes={total}",
+-            f"gen_fail={gen_failures} gen_inflight={gen_inflight} llm_q={gq}",
++            f"gen_fail={gen_failures} gen_inflight={gen_inflight} llm_q={gq}"
++            + (f" refunded={refunded}" if refunded else "")
++            + (f" retried={retried}" if retried else ""),
+             f"eval_fail={eval_failures} eval_inflight={eval_inflight} eval_q={eq}",
+         ]
+         if best_score is not None and best_score != -float("inf"):
+@@ -922,6 +1053,9 @@ class SimpleTESEngine(SchedulerMixin):
+         self.completed_evaluations = restored["completed_evaluations"]
+         self.generation_attempts = restored["generation_attempts"]
+         self.generation_failures = restored.get("generation_failures", 0)
++        # Restore the refund total so a resume cannot hand the run a fresh cap (missing from
++        # checkpoints written before refunds existed, hence the default).
++        self._refunded_attempts = int(restored.get("refunded_attempts", 0))
+         self.generation_cancellations = restored.get("generation_cancellations", 0)
+         self.evaluation_failures = restored.get("evaluation_failures", 0)
+         self._failure_records = restored.get("failure_records", [])
+diff --git a/simpletes/engine/scheduler.py b/simpletes/engine/scheduler.py
+index 25cdcdf..8a89e4f 100644
+--- a/simpletes/engine/scheduler.py
++++ b/simpletes/engine/scheduler.py
+@@ -239,7 +239,17 @@ class SchedulerMixin:
+             max_gens = self.config.max_generations
+ 
+         if gen_attempts < max_gens:
+-            return False
++            # Refund mode can leave a PERMANENT deficit here: a refunded attempt inside a batch
++            # that also delivered something gives the attempt back while the prompt stays charged,
++            # so attempts never reach max_gens after the prompt allowance runs dry. The exhaustion
++            # check must therefore be reachable from this gate, not only from the final one: with
++            # the check only below, one refunded stream-k attempt leaves the scheduler on the 30 s
++            # progress wait forever.
++            if not self._refund_enabled:
++                return False
++            if not getattr(self.selector, "is_exhausted", lambda: False)():
++                return False
++            # exhausted with budget left: fall through to the drain checks below
+ 
+         # Check queues and pending nodes atomically
+         async with self._db_lock:
+@@ -251,6 +261,14 @@ class SchedulerMixin:
+         if gen_q_size > 0 or eval_q_size > 0 or pending_count > 0:
+             return False
+ 
++        # Refund mode: a generation still in flight can hand budget (and its chain's prompt)
++        # back, so nothing is final while one is unresolved. Gated so an unset run drains
++        # exactly as upstream.
++        if self._refund_enabled:
++            async with self._counter_lock:
++                if self._gen_inflight > 0:
++                    return False
++
+         # Double-check after brief yield to catch any in-flight operations
+         await asyncio.sleep(_COMPLETION_CHECK_DELAY_SEC)
+ 
+@@ -261,7 +279,22 @@ class SchedulerMixin:
+         gen_q_size = stats["gen_queue"]
+         eval_q_size = stats["eval_queue"]
+ 
+-        return gen_q_size == 0 and eval_q_size == 0 and pending_count == 0
++        if gen_q_size != 0 or eval_q_size != 0 or pending_count != 0:
++            return False
++
++        if self._refund_enabled:
++            async with self._counter_lock:
++                if self._gen_inflight > 0:
++                    return False
++                attempts_spent = self.generation_attempts >= self.config.max_generations
++            # Partial-transport batches consume a prompt without consuming refunded attempts, so
++            # the prompt allowance can run dry while attempts remain. The run is then finished by
++            # construction -- no chain will ever accept another prompt -- and must terminate here
++            # rather than spin on the progress wait until walltime.
++            exhausted = getattr(self.selector, "is_exhausted", lambda: False)()
++            return attempts_spent or exhausted
++
++        return True
+ 
+     async def _scheduler_loop(self) -> None:
+         """Main scheduler loop."""
+diff --git a/simpletes/llm/litellm_client.py b/simpletes/llm/litellm_client.py
+index 3bce016..e89206a 100644
+--- a/simpletes/llm/litellm_client.py
++++ b/simpletes/llm/litellm_client.py
+@@ -229,8 +229,14 @@ class LLMClient:
+         if self.api_key is not None:
+             kwargs["api_key"] = self.api_key
+ 
+-        # gpt-oss routes reasoning_effort through LiteLLM's allowed_openai_params
+-        if "gpt-oss" in self.model:
++        # gpt-oss routes reasoning_effort through LiteLLM's allowed_openai_params.
++        # Kimi-K3 needs the same routing for a different reason: without an explicit
++        # reasoning_effort the Together endpoint spends the whole max_tokens budget on the
++        # reasoning channel and returns an empty content field, which the generator scores as
++        # "empty_output" and rejects -- the search then never commits a single candidate. This
++        # is a provider-transport fix only; nothing about candidate generation, selection or
++        # scoring changes.
++        if "gpt-oss" in self.model or "k3" in self.model.lower():
+             kwargs["reasoning_effort"] = self.reasoning_effort
+             kwargs["allowed_openai_params"] = ["reasoning_effort"]
+ 
+diff --git a/simpletes/policies/base.py b/simpletes/policies/base.py
+index abb38b0..d4f988c 100755
+--- a/simpletes/policies/base.py
++++ b/simpletes/policies/base.py
+@@ -158,6 +158,19 @@ class Selector:
+         """
+         return None
+ 
++    def on_generation_transport_failed(self, gen_id: int) -> PendingFinalize | None:
++        """A generation the provider never delivered (503-class transport failure).
++
++        Distinct from on_generation_failed so a policy that budgets PROMPTS can decline to
++        charge a prompt the model never saw. Default: identical to a plain failure.
++        """
++        return self.on_generation_failed(gen_id)
++
++    def is_exhausted(self) -> bool:
++        """True when the policy can never accept another prompt. Engines may use this as a
++        termination condition; the default selector never exhausts."""
++        return False
++
+     def state_dict(self) -> dict[str, Any]:
+         """Return serializable state for checkpointing."""
+         return {}
+@@ -520,8 +533,18 @@ class TrajectoryPolicyBase(Selector):
+         except Exception:
+             pass
+ 
+-        # Scheduling state (ALWAYS runs for cleanup)
+-        self.chain_prompt_count[chain_idx] += 1
++        # Scheduling state (ALWAYS runs for cleanup).
++        # A batch in which EVERY attempt died in transport never reached the model: no candidate
++        # was delivered, rejected, or scored, so the step did not happen and the chain's prompt
++        # allowance is not charged. Charging it is exactly how a provider outage silently buys a
++        # smaller search -- the binding budget here is prompts, not the engine's attempt counter
++        # (prompt_budget = ceil(chain budget / k), zero slack when k divides evenly). A batch with
++        # even one delivered result -- including a content-level rejection -- consumed its step and
++        # is charged as always.
++        batch = self._batches.get(pending.gen_id)
++        all_transport = bool(batch) and batch.get("transport_failed", 0) >= batch.get("submitted", 0)
++        if not all_transport:
++            self.chain_prompt_count[chain_idx] += 1
+         del self._batches[pending.gen_id]
+ 
+         if self.chain_prompt_count[chain_idx] >= self.prompt_budget.get(chain_idx, 0):
+@@ -549,6 +572,7 @@ class TrajectoryPolicyBase(Selector):
+                 "inspirations": list(inspiration_ids),
+                 "submitted": k,
+                 "done": 0,
++                "transport_failed": 0,
+                 "children": [],
+             }
+ 
+@@ -664,6 +688,19 @@ class TrajectoryPolicyBase(Selector):
+                 )
+             return None
+ 
++    def on_generation_transport_failed(self, gen_id: int) -> PendingFinalize | None:
++        """Like on_generation_failed, but records that the provider never delivered this one,
++        so finalize can decide whether the batch consumed a prompt at all."""
++        with self._lock:
++            batch = self._batches.get(gen_id)
++            if batch is not None:
++                batch["transport_failed"] += 1
++        return self.on_generation_failed(gen_id)
++
++    def is_exhausted(self) -> bool:
++        with self._lock:
++            return not self._ready_chains and not self._batches
++
+     def _state_dict_extra(self) -> dict[str, Any]:
+         return {}
+ 

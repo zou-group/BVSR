@@ -1,0 +1,121 @@
+from .base import Task
+
+
+class MLSAnomalyTask(Task):
+    name = "mls_anomaly"
+    marker = "class CustomAnomalyDetector"
+    title = "MLS-Anomaly"
+
+    job_dash = "--"
+    transplant = ("Implement a REAL transplant of THAT ONE mechanism into how normal structure is "
+                  "modelled and how deviation from it becomes a score -- not a generic detector "
+                  "wearing its name. ONE mechanism only; do NOT add other tricks.")
+    code_format = ("<your imports, then class "
+                   "CustomAnomalyDetector with __init__, fit and decision_function>")
+
+    def interface(self):
+        return (
+"You are designing the SCORING RULE of an unsupervised anomaly detector for tabular data: how to\n"
+"model normal structure from unlabelled standardized features, and how to assign each row a score\n"
+"that is higher when the row is more unusual.\n\n"
+"Write EXACTLY this class (helper classes and functions in the same block are fine):\n"
+"    class CustomAnomalyDetector:\n"
+"        def __init__(self): ...                  # hyperparameters and internal state\n"
+"        def fit(self, X): ...                    # X (n_train, d) float64, standardized, NO labels\n"
+"        def decision_function(self, X): ...      # -> (n_test,) float, higher = more anomalous\n"
+"`fit` must return self. A FRESH instance is constructed for each dataset.\n\n"
+"THE DATA. Features arrive already standardized (StandardScaler fitted on the training split:\n"
+"zero mean, unit variance per column). You never see a label, at fit time or at scoring time.\n"
+"Four ADBench/ODDS benchmarks are run, and one detector design must work on all four:\n"
+"    cardio     1,831 rows,  21 features,  ~9.6% anomalies\n"
+"    thyroid    3,772 rows,   6 features,  ~2.5% anomalies\n"
+"    satellite  6,435 rows,  36 features, ~31.6% anomalies\n"
+"    shuttle   49,097 rows,   9 features,  ~7.2% anomalies\n"
+"Protocol: 60/40 stratified train/test split; fit on the train features, score the test features.\n\n"
+"TRANSDUCTIVE RULE (deliberate, and the same for every entry). `decision_function` receives the\n"
+"WHOLE test matrix in one call, and you may use statistics of that batch. The published ECOD\n"
+"baseline does exactly this: it re-estimates its per-dimension empirical CDFs on train and test\n"
+"concatenated, inside decision_function. Batch-level structure of the scored set is therefore fair\n"
+"game. What is NOT available is any label, and the split is stratified, so the test set's anomaly\n"
+"rate is the dataset's own rate.\n\n"
+"SCORING. Per dataset: AUROC of the scores, and F1 after thresholding at the true contamination\n"
+"quantile (the top n*contamination scored rows are called anomalies). Both higher is better. The\n"
+"official MLS-Bench task score normalizes each of the eight numbers against the published baseline\n"
+"spread (worst baseline -> 0, best baseline -> 0.5, perfect -> 1), averages AUROC with F1 within a\n"
+"dataset, and takes the geometric mean over the four datasets. An all-perfect detector would score\n"
+"0.845; the strongest published baseline scores 0.491. Because it is a geometric mean, being weak\n"
+"on ONE dataset caps the whole score -- satellite is where the baselines are weakest and where\n"
+"most of the head-room is.\n\n"
+"WHAT YOU MAY IMPORT: numpy, scipy, scikit-learn, pyod. Nothing else, and in particular the\n"
+"program has NO filesystem, network or subprocess access -- it is handed the two arrays and that\n"
+"is all there is. Multiprocessing is unavailable, so keep n_jobs at 1 (threads are fine).\n\n"
+"HARD CONSTRAINTS (each one scores 0.0 if broken):\n"
+"  * at most 10,000 torch parameters, counted as sum(p.numel()) over every torch parameter the\n"
+"    program creates. torch is importable and a small learned component is allowed, but a deep\n"
+"    model off the shelf is not. Only TORCH parameters are counted -- a large sklearn ensemble,\n"
+"    a kernel machine or a big non-parametric estimator costs nothing against this budget.\n"
+"  * decision_function must return exactly (n_test,) finite floats;\n"
+"  * all four datasets together must finish in under 300 seconds of wall clock, with a 120 second\n"
+"    limit per dataset (shuttle has 29k training rows, so anything O(n^2) in the training set will\n"
+"    time out and score 0.0);\n"
+"  * seed anything stochastic (an integer literal, or the provided module-level RANDOM_SEED = 0);\n"
+"    `np` is pre-bound in your namespace, and any exception, timeout or wrong shape scores 0.0."
+        )
+
+    def baseline_pool(self):
+        return (
+"EXISTING BASELINE POOL, all re-measured on this exact pipeline (seed 42). Columns are AUROC / F1\n"
+"per dataset and the official task score, which is what you have to beat:\n\n"
+"  baseline    score    cardio        thyroid       satellite     shuttle\n"
+"  iForest     0.491    .945 / .557   .981 / .568   .714 / .597   .997 / .966   STRONGEST\n"
+"  ECOD        0.403    .935 / .557   .981 / .595   .585 / .458   .992 / .864\n"
+"  COPOD       0.285    .915 / .500   .943 / .297   .636 / .485   .994 / .944\n"
+"  OCSVM       0.245    .932 / .586   .877 / .270   .598 / .489   .981 / .947\n"
+"  LOF         0.010    .621 / .157   .870 / .189   .516 / .358   .548 / .143   WEAKEST\n\n"
+"[iForest]  Liu, Ting, Zhou, ICDM 2008. Random axis-aligned recursive partitioning; a point's\n"
+"           score is its average path length to isolation over 100 trees of 256 sub-sampled rows.\n"
+"[ECOD]     Li et al., IEEE TKDE 2022. Parameter-free: per-dimension empirical CDFs, aggregate the\n"
+"           negative log tail probabilities across dimensions. Fits its ECDFs on train+test.\n"
+"[COPOD]    Li et al., ICDM 2020. Empirical copula over the marginals, with left/right/skewness-\n"
+"           corrected tail probabilities.\n"
+"[OCSVM]    Schoelkopf et al., 2001. RBF one-class boundary, nu = 0.5.\n"
+"[LOF]      Breunig et al., SIGMOD 2000. Ratio of a point's local reachability density to that of\n"
+"           its 20 nearest neighbours.\n\n"
+"The strongest baseline is the crudest one. Read the table by column, not by row: every method is\n"
+"near-saturated on shuttle and thyroid AUROC, all of them are poor on satellite (31.6% anomalies,\n"
+"36 features -- the 'anomalies' are a large, structured, multi-modal population, not isolated\n"
+"points), and every F1 is far below its AUROC, i.e. the scores rank better than they separate.\n\n"
+"CODE OF THE STRONGEST BASELINE (iForest), in the exact shape your answer must take:\n"
+"```python\n"
+"class CustomAnomalyDetector:\n"
+"    def __init__(self):\n"
+"        from pyod.models.iforest import IForest\n"
+"        self.model = IForest(n_estimators=100, max_samples=\"auto\", contamination=0.1,\n"
+"                             random_state=RANDOM_SEED)\n\n"
+"    def fit(self, X):\n"
+"        self.model.fit(X)\n"
+"        return self\n\n"
+"    def decision_function(self, X):\n"
+"        return self.model.decision_function(X)\n"
+"```"
+        )
+
+    def guidance(self):
+        return (
+"\n3'. Transplant THAT ONE mechanism into the SCORING RULE itself -- what counts as normal\n"
+"   structure and how deviation from it is turned into a number. Wrapping an existing detector\n"
+"   and renaming it scores what that detector scores.\n"
+"- The output is a self-contained block: your imports (numpy / scipy / scikit-learn / pyod only)\n"
+"   followed by `class CustomAnomalyDetector` with __init__, fit(X) and decision_function(X).\n"
+"   `np` and RANDOM_SEED = 0 are already bound. No file, network or subprocess access exists.\n"
+"- At most 10,000 torch parameters (sum of p.numel()); sklearn/scipy estimators are uncounted.\n"
+"- Budget: all four datasets under 300 s total, under 120 s each, on one CPU core with 4 threads.\n"
+"   shuttle is 29k x 9 at fit time, so an O(n^2) distance matrix will not fit in the budget.\n"
+"- Aim at satellite (best baseline AUROC 0.714) and at F1 rather than at the two datasets that\n"
+"   are already above 0.99 AUROC: the total is a geometric mean, so the weakest dataset caps it.\n"
+"- Any exception, non-finite score, wrong shape, timeout or parameter-cap breach scores 0.0."
+        )
+
+    def baselines(self):
+        return {"isolation_forest": 0.4912, "ecod": 0.4031, "copod": 0.2846,
+                "ocsvm": 0.2445, "lof": 0.0100}

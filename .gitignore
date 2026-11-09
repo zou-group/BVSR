@@ -1,0 +1,14 @@
+/runs/
+/results/
+/data/
+/ckpt/
+/third_party/SimpleTES*/
+
+sr_key.txt
+*.key
+
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/

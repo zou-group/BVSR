@@ -1,0 +1,51 @@
+You are designing the SCORING RULE of an unsupervised anomaly detector for tabular data: how to
+model normal structure from unlabelled standardized features, and how to assign each row a score
+that is higher when the row is more unusual.
+
+Write EXACTLY this class (helper classes and functions in the same block are fine):
+    class CustomAnomalyDetector:
+        def __init__(self): ...                  # hyperparameters and internal state
+        def fit(self, X): ...                    # X (n_train, d) float64, standardized, NO labels
+        def decision_function(self, X): ...      # -> (n_test,) float, higher = more anomalous
+`fit` must return self. A FRESH instance is constructed for each dataset.
+
+THE DATA. Features arrive already standardized (StandardScaler fitted on the training split:
+zero mean, unit variance per column). You never see a label, at fit time or at scoring time.
+Four ADBench/ODDS benchmarks are run, and one detector design must work on all four:
+    cardio     1,831 rows,  21 features,  ~9.6% anomalies
+    thyroid    3,772 rows,   6 features,  ~2.5% anomalies
+    satellite  6,435 rows,  36 features, ~31.6% anomalies
+    shuttle   49,097 rows,   9 features,  ~7.2% anomalies
+Protocol: 60/40 stratified train/test split; fit on the train features, score the test features.
+
+TRANSDUCTIVE RULE (deliberate, and the same for every entry). `decision_function` receives the
+WHOLE test matrix in one call, and you may use statistics of that batch. The published ECOD
+baseline does exactly this: it re-estimates its per-dimension empirical CDFs on train and test
+concatenated, inside decision_function. Batch-level structure of the scored set is therefore fair
+game. What is NOT available is any label, and the split is stratified, so the test set's anomaly
+rate is the dataset's own rate.
+
+SCORING. Per dataset: AUROC of the scores, and F1 after thresholding at the true contamination
+quantile (the top n*contamination scored rows are called anomalies). Both higher is better. The
+official MLS-Bench task score normalizes each of the eight numbers against the published baseline
+spread (worst baseline -> 0, best baseline -> 0.5, perfect -> 1), averages AUROC with F1 within a
+dataset, and takes the geometric mean over the four datasets. An all-perfect detector would score
+0.845; the strongest published baseline scores 0.491. Because it is a geometric mean, being weak
+on ONE dataset caps the whole score -- satellite is where the baselines are weakest and where
+most of the head-room is.
+
+WHAT YOU MAY IMPORT: numpy, scipy, scikit-learn, pyod. Nothing else, and in particular the
+program has NO filesystem, network or subprocess access -- it is handed the two arrays and that
+is all there is. Multiprocessing is unavailable, so keep n_jobs at 1 (threads are fine).
+
+HARD CONSTRAINTS (each one scores 0.0 if broken):
+  * at most 10,000 torch parameters, counted as sum(p.numel()) over every torch parameter the
+    program creates. torch is importable and a small learned component is allowed, but a deep
+    model off the shelf is not. Only TORCH parameters are counted -- a large sklearn ensemble,
+    a kernel machine or a big non-parametric estimator costs nothing against this budget.
+  * decision_function must return exactly (n_test,) finite floats;
+  * all four datasets together must finish in under 300 seconds of wall clock, with a 120 second
+    limit per dataset (shuttle has 29k training rows, so anything O(n^2) in the training set will
+    time out and score 0.0);
+  * seed anything stochastic (an integer literal, or the provided module-level RANDOM_SEED = 0);
+    `np` is pre-bound in your namespace, and any exception, timeout or wrong shape scores 0.0.

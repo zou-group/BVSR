@@ -1,0 +1,37 @@
+You are designing the algorithm that PREDICTS how a system responds to an intervention it has never
+seen in that context. The data: for 614 (context, intervention) pairs — 6 contexts (cell types) x
+~146 interventions (small-molecule compounds) with many cells each — you are given the measured
+RESPONSE PROFILE: a signed, noise-calibrated differential-expression score per feature (~18k
+features; positive = feature up, negative = down, magnitude = confidence). The held-out query is
+255 (context, intervention) pairs — interventions observed in OTHER contexts but not this one.
+Predict the full response profile for each query pair.
+
+Write EXACTLY one function with this interface:
+    def predict_de(de_train, id_map):
+        # de_train.layers['clipped_sign_log10_pval'] : [614 x ~18k] float response profiles
+        # de_train.obs['cell_type']  : the context of each training pair
+        # de_train.obs['sm_name']    : the intervention of each training pair
+        # de_train.obs['SMILES']     : a structural string representation of each intervention
+        # de_train.var_names         : the ~18k feature names
+        # id_map                     : DataFrame with columns ['id','cell_type','sm_name'] — the 255
+        #                              query pairs, in output row order
+        # Return a [len(id_map) x n_features] float array (finite), rows in id_map order.
+
+THE STRUCTURE YOU HAVE TO WORK WITH:
+- The (context x intervention) matrix of profiles is PARTIALLY OBSERVED; queries are held-out cells
+  of that matrix. Both context main effects and intervention main effects are strong; the hard part
+  is the interaction — how a given context reshapes a given intervention's response.
+- Interventions have structure (the SMILES string): similar compounds tend to act similarly, but
+  not always — and the strongest responses are the least transferable across contexts.
+- Responses are signed and heavy-tailed; most features barely respond to most interventions. The
+  evaluation is HALF error-based (row RMSE/MAE) and HALF shape-based (row Pearson/Spearman/cosine),
+  so both magnitude calibration and profile shape matter.
+
+In scope (available as globals; helper functions are fine): `numpy as np`, `pandas as pd`,
+`scipy.sparse as sp`, `sklearn`, `sc` (scanpy + its anndata). These are the ONLY installed
+third-party packages — any other import fails at runtime.
+Everything else is FIXED: the data, the held-out truth, the metrics, the anchoring against the
+leaderboard's own controls. Candidates that try to read the held-out data are voided.
+
+CONSTRAINTS: function name MUST be `predict_de`, output [255 x n_features] finite floats in id_map
+row order. Keep one full run under ~20 CPU-minutes and under 32 GB. Seed anything random.

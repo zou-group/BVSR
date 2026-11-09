@@ -1,0 +1,38 @@
+{
+ "svg": {
+  "short": "A benchmark on detecting genes whose expression levels vary across spatial regions."
+ },
+ "labelproj": {
+  "short": "Automated cell type annotation from rich, labeled reference data"
+ },
+ "pertpred": {
+  "short": "A benchmark on predicting how small molecules change gene expression in different cell types."
+ },
+ "ccc": {
+  "short": "Predicting cell-cell interactions between source cell types and target cell types."
+ },
+ "mls_anomaly": {
+  "short": "Design a novel unsupervised anomaly detection algorithm for tabular data that generalizes across datasets with different sample counts, dimensionality, and anomaly rates."
+ },
+ "mls_calibration": {
+  "short": "Design a novel post-hoc probability calibration method that maps a classifier's raw confidence estimates into well-calibrated probabilities."
+ },
+ "sl_lrbsz": {
+  "short": "Discover a scaling law function that models the relationship between learning rate, batch size, data size, model parameters and training loss."
+ },
+ "sl_ushape": {
+  "short": "Discover a scaling law function that models the relationship between compute (FLOPs) and LLM performance on easy questions, which exhibits a characteristic U-shaped or double descent pattern."
+ },
+ "astro_cassini": {
+  "short": "Design a Cassini-like Earth-to-Saturn trajectory using Venus, Earth, and Jupiter gravity assists."
+ },
+ "astro_voyager2": {
+  "short": "Design a Voyager-2-like outer-planet tour from Earth to Neptune during a favorable grand-tour alignment."
+ },
+ "zap_h16": {
+  "short": "Forecast cellular-resolution neural activity in a larval zebrafish brain: given the past 4 time steps of activity for every neuron, predict the next 16 time steps for every neuron."
+ },
+ "zap_h32": {
+  "short": "Forecast cellular-resolution neural activity in a larval zebrafish brain: given the past 4 time steps of activity for every neuron, predict the next 32 time steps for every neuron."
+ }
+}
