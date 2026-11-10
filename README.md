@@ -16,7 +16,7 @@ python3 -m http.server 8000
 | Site address used in link previews (`og:url`, `og:image`, canonical) | the `<head>` of `index.html`; currently `https://zou-group.github.io/BVSR/` |
 | Code link | `LINKS.code` in `assets/js/main.js`, plus the footer of `index.html` |
 | BibTeX | the `<pre id="bibtex">` block in `index.html` |
-| Author homepages | wrap the names in the `.authors` block of `index.html` in `<a href="...">` |
+| Author homepages | the `<a href="...">` around each name in the `.authors` block of `index.html` |
 
 ## Layout
 
