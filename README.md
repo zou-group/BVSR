@@ -4,11 +4,11 @@
 
 **Improving creative idea generation in AI scientists.**
 
-[![arXiv](https://img.shields.io/badge/arXiv-XXXX.XXXXX-B31B1B.svg)][#arxiv-paper-package]
+[![arXiv](https://img.shields.io/badge/arXiv-2611.12184-B31B1B.svg)][#arxiv-paper-package]
 [![Website](https://img.shields.io/badge/Website-BVSR-blue.svg)][#website-package]
 [![Hugging Face](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-BVSR--data-yellow.svg)][#huggingface-package]
 
-[#arxiv-paper-package]: https://arxiv.org/abs/XXXX.XXXXX
+[#arxiv-paper-package]: https://arxiv.org/abs/2611.12184
 [#website-package]: https://zou-group.github.io/BVSR/
 [#huggingface-package]: https://huggingface.co/datasets/Xkev/BVSR-data
 
@@ -132,10 +132,13 @@ The released SR selector is [`Xkev/SR-judger`](https://huggingface.co/Xkev/SR-ju
 If you find BVSR useful in your research, please consider citing our paper.
 
 ```bibtex
-@article{xu2026bvsr,
-  title   = {Blind Variation, Selective Retention: Improving Creative Idea Generation in AI Scientists},
-  author  = {Xu, Guowei and Zou, Jiaru and Erdogan, Mete and Ye, Haotian and Lu, Pan and Zou, James},
-  journal = {arXiv preprint arXiv:XXXX.XXXXX},
-  year    = {2026}
+@misc{xu2026BVSR,
+      title={Blind Variation, Selective Retention: Improving Creative Idea Generation in AI Scientists},
+      author={Guowei Xu and Jiaru Zou and Mete Erdogan and Haotian Ye and Pan Lu and James Zou},
+      year={2026},
+      eprint={2611.12184},
+      archivePrefix={arXiv},
+      primaryClass={cs.CL},
+      url={https://arxiv.org/abs/2611.12184},
 }
 ```
