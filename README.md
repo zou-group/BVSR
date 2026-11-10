@@ -11,11 +11,11 @@ python3 -m http.server 8000
 
 | What | Where |
 |---|---|
-| Paper / arXiv link (the button shows "coming soon" until this is set) | `LINKS.paper` at the top of `assets/js/main.js` |
+| Paper / arXiv link | the `#link-paper` button in `index.html` and `LINKS.paper` at the top of `assets/js/main.js` |
 | Hugging Face link (same "coming soon" behaviour) | `LINKS.huggingface` in `assets/js/main.js` |
 | Site address used in link previews (`og:url`, `og:image`, canonical) | the `<head>` of `index.html`; currently `https://zou-group.github.io/BVSR/` |
 | Code link | `LINKS.code` in `assets/js/main.js`, plus the footer of `index.html` |
-| BibTeX (add the arXiv ID) | the `<pre id="bibtex">` block in `index.html` |
+| BibTeX | the `<pre id="bibtex">` block in `index.html` |
 | Author homepages | wrap the names in the `.authors` block of `index.html` in `<a href="...">` |
 
 ## Layout

@@ -3,11 +3,10 @@
   'use strict';
 
   /* ------------------------------------------------------------------
-     EDIT ME: external links. Leave `paper` / `huggingface` empty until the link exists;
-     that button then shows "(coming soon)" and is not clickable.
+     EDIT ME: external links (the paper link is also written in index.html).
      ------------------------------------------------------------------ */
   var LINKS = {
-    paper: '',                                   // e.g. 'https://arxiv.org/abs/2611.01234'
+    paper: 'https://arxiv.org/abs/2611.12184',
     code: 'https://github.com/zou-group/BVSR',
     huggingface: 'https://huggingface.co/collections/Xkev/bvsr'
   };
